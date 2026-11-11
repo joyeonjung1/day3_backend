@@ -50,6 +50,19 @@ class SupabaseStore:
                .order("ran_at", desc=True).limit(limit).execute())
         return res.data
 
+    def stats(self, source):
+        """누적 행 수 · 수집 횟수 · 가장 오래된/최근 측정 시각"""
+        def edge(desc):
+            d = (self.sb.table("air_readings").select("data_time").eq("source", source)
+                 .order("data_time", desc=desc).limit(1).execute()).data
+            return d[0]["data_time"] if d else None
+
+        rows = (self.sb.table("air_readings").select("id", count="exact")
+                .eq("source", source).limit(1).execute()).count or 0
+        runs = (self.sb.table("collect_logs").select("id", count="exact")
+                .eq("source", source).limit(1).execute()).count or 0
+        return {"rows": rows, "runs": runs, "first": edge(False), "last": edge(True)}
+
 
 class MemoryStore:
     kind = "memory(임시)"
@@ -76,6 +89,12 @@ class MemoryStore:
 
     def logs(self, limit=20):
         return list(reversed(self._logs))[:limit]
+
+    def stats(self, source):
+        times = sorted(r["data_time"] for r in self.rows.values() if r["source"] == source)
+        runs = sum(1 for l in self._logs if l.get("source") == source)
+        return {"rows": len(times), "runs": runs,
+                "first": times[0] if times else None, "last": times[-1] if times else None}
 
 
 def get_store():

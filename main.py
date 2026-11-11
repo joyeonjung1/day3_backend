@@ -13,7 +13,8 @@ main.py — 제주 미세먼지 백엔드 (FastAPI)
   DATA_GO_KR_KEY                      공공데이터포털 인증키 (없으면 연습 데이터)
   ADMIN_TOKEN                         /collect 를 아무나 못 누르게 하는 암호
   FRONT_ORIGINS                       프론트 주소 (쉼표로 여러 개, 끝에 / 없이)
-  SIDO_NAME=제주  COLLECT_MINUTES=60  AUTO_COLLECT=1  DEMO_MODE=0
+  SIDO_NAME=제주  COLLECT_MINUTES=60  AUTO_COLLECT=1
+  FORCE_DEMO=1                        (선택) 키가 있어도 연습 데이터를 쓰고 싶을 때만. 평소엔 넣지 않음
 """
 import asyncio
 import logging
@@ -41,8 +42,15 @@ log = logging.getLogger("uvicorn.error")
 DATA_KEY = os.getenv("DATA_GO_KR_KEY", "").strip()
 SIDO = os.getenv("SIDO_NAME", "제주").strip()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
-DEMO = os.getenv("DEMO_MODE", "0") == "1" or not DATA_KEY
+# 연습 모드는 (1) 인증키가 없거나 (2) FORCE_DEMO=1 일 때만 켜진다.
+# 예전 변수 DEMO_MODE 는 더 이상 쓰지 않는다 (Railway에 남아 있어도 무시됨)
+FORCE_DEMO = os.getenv("FORCE_DEMO", "0").strip() == "1"
+DEMO = FORCE_DEMO or not DATA_KEY
+DEMO_REASON = ("FORCE_DEMO=1" if FORCE_DEMO else "DATA_GO_KR_KEY 없음") if DEMO else None
 SOURCE = "demo" if DEMO else "airkorea"
+if os.getenv("DEMO_MODE"):
+    logging.getLogger("uvicorn.error").warning(
+        "DEMO_MODE 변수는 더 이상 쓰지 않습니다. 연습 모드가 필요하면 FORCE_DEMO=1 을 쓰세요.")
 AUTO = os.getenv("AUTO_COLLECT", "1") == "1"
 MINUTES = int(os.getenv("COLLECT_MINUTES", "60"))
 
@@ -114,7 +122,7 @@ def home():
 def health():
     missing = [k for k in ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "DATA_GO_KR_KEY",
                            "ADMIN_TOKEN", "FRONT_ORIGINS"] if not os.getenv(k, "").strip()]
-    return {"ok": True, "mode": SOURCE, "store": store.kind,
+    return {"ok": True, "mode": SOURCE, "demo_reason": DEMO_REASON, "store": store.kind,
             "auto_collect_minutes": MINUTES if AUTO else None, "missing": missing,
             # 허용된 프론트 주소 (CORS 확인용. 주소라서 비밀이 아님)
             "front_origins": FRONT_ORIGINS}
@@ -178,6 +186,23 @@ def air_predict(station: str = Query(..., max_length=30)):
     if not hist:
         raise HTTPException(404, f"'{station}' 측정소 데이터가 없습니다")
     return {"station": station, **predict.predict_next(hist)}
+
+
+@app.get("/air/history")
+def air_history(station: str = Query(..., max_length=30),
+                limit: int = Query(48, ge=1, le=168, description="최근 몇 건 (시간 단위)")):
+    """DB에 시간마다 쌓인 기록 (오래된 순). 예측의 근거가 되는 데이터"""
+    hist = store.history(SOURCE, station, limit)
+    return [{"time": db.kst(h["data_time"]), "pm10": h["pm10"], "pm25": h["pm25"]} for h in hist]
+
+
+@app.get("/air/stats")
+def air_stats():
+    """DB(Supabase)에 지금까지 얼마나 쌓였는지 — 저장이 실제로 일어나는지 확인용"""
+    s = store.stats(SOURCE)
+    for k in ("first", "last"):
+        s[k] = db.kst(s[k]) if s.get(k) else None
+    return {"mode": SOURCE, "store": store.kind, **s}
 
 
 @app.get("/logs")
