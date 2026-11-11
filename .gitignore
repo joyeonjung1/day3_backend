@@ -1,0 +1,8 @@
+# 비밀값과 가상환경은 절대 GitHub에 올리지 않는다
+.env
+.env.*
+!.env.example
+vjeju/
+.venv/
+__pycache__/
+*.pyc
