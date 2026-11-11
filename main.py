@@ -45,7 +45,21 @@ DEMO = os.getenv("DEMO_MODE", "0") == "1" or not DATA_KEY
 SOURCE = "demo" if DEMO else "airkorea"
 AUTO = os.getenv("AUTO_COLLECT", "1") == "1"
 MINUTES = int(os.getenv("COLLECT_MINUTES", "60"))
-FRONT_ORIGINS = [o.strip().rstrip("/") for o in os.getenv("FRONT_ORIGINS", "").split(",") if o.strip()]
+
+
+def _parse_origins(raw: str) -> list[str]:
+    """쉼표로 나눈 주소 목록. Railway에 실수로 넣은 따옴표·공백·끝의 / 를 정리한다.
+    예) "https://a.vercel.app, http://127.0.0.1:5000/"  →  ['https://a.vercel.app', 'http://127.0.0.1:5000']
+    """
+    out = []
+    for o in raw.split(","):
+        o = o.strip().strip("\"'").strip().rstrip("/")
+        if o and o not in out:
+            out.append(o)
+    return out
+
+
+FRONT_ORIGINS = _parse_origins(os.getenv("FRONT_ORIGINS", ""))
 
 store = db.get_store()
 
@@ -101,7 +115,9 @@ def health():
     missing = [k for k in ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "DATA_GO_KR_KEY",
                            "ADMIN_TOKEN", "FRONT_ORIGINS"] if not os.getenv(k, "").strip()]
     return {"ok": True, "mode": SOURCE, "store": store.kind,
-            "auto_collect_minutes": MINUTES if AUTO else None, "missing": missing}
+            "auto_collect_minutes": MINUTES if AUTO else None, "missing": missing,
+            # 허용된 프론트 주소 (CORS 확인용. 주소라서 비밀이 아님)
+            "front_origins": FRONT_ORIGINS}
 
 
 @app.post("/collect")
