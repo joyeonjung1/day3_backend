@@ -93,7 +93,7 @@ app.add_middleware(CORSMiddleware, allow_origins=FRONT_ORIGINS,
 
 @app.get("/")
 def home():
-    return {"service": "제주 미세먼지 백엔드", "mode": SOURCE, "docs": "/docs"}
+    return {"service": "서울 미세먼지 백엔드", "mode": SOURCE, "docs": "/docs"}
 
 
 @app.get("/health")
