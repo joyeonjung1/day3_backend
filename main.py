@@ -36,6 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 import collect  # noqa: E402
 import db  # noqa: E402
 import predict  # noqa: E402
+import stations  # noqa: E402
 
 log = logging.getLogger("uvicorn.error")
 
@@ -156,9 +157,14 @@ def _latest_rows():
 def air_latest():
     rows = _latest_rows()
     rows.sort(key=lambda r: r["pm10"] or 0, reverse=True)
-    return [{"station": r["station"], "time": db.kst(r["data_time"]),
-             "pm10": r["pm10"], "pm10_grade": r["pm10_grade"],
-             "pm25": r["pm25"], "pm25_grade": r["pm25_grade"]} for r in rows]
+    out = []
+    for r in rows:
+        lat, lng = stations.locate(r["station"])
+        out.append({"station": r["station"], "time": db.kst(r["data_time"]),
+                    "pm10": r["pm10"], "pm10_grade": r["pm10_grade"],
+                    "pm25": r["pm25"], "pm25_grade": r["pm25_grade"],
+                    "lat": lat, "lng": lng})
+    return out
 
 
 @app.get("/air/summary")
